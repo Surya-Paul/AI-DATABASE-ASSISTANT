@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/index.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/index.py" },
+    { "source": "/query", "destination": "/api/index.py" },
+    { "source": "/explain", "destination": "/api/index.py" },
+    { "source": "/optimize", "destination": "/api/index.py" },
+    { "source": "/correct", "destination": "/api/index.py" },
+    { "source": "/schema", "destination": "/api/index.py" },
+    { "source": "/test_query", "destination": "/api/index.py" },
+    { "source": "/(.*)", "destination": "/frontend/$1" }
+  ]
+}
