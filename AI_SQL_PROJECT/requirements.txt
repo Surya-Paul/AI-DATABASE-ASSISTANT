@@ -1,0 +1,5 @@
+fastapi
+anthropic
+sqlalchemy
+python-dotenv
+pydantic
