@@ -1,4 +1,4 @@
-# AI-DATABASE-ASSISTANT
+
 # AI SQL Assistant
 
 A mini "ChatGPT for databases" web application that converts natural language questions into executable SQL queries, runs them against a local SQLite database, and provides tools to explain, optimize, and auto-correct queries.
