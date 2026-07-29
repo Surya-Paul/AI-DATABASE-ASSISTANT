@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/index.py",
+      "use": "@vercel/python"
+    },
+    {
+      "src": "public/**",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    { "src": "/query", "dest": "/api/index.py" },
+    { "src": "/explain", "dest": "/api/index.py" },
+    { "src": "/optimize", "dest": "/api/index.py" },
+    { "src": "/correct", "dest": "/api/index.py" },
+    { "src": "/schema", "dest": "/api/index.py" },
+    { "src": "/test_query", "dest": "/api/index.py" },
+    { "src": "/api/(.*)", "dest": "/api/index.py" },
+    { "src": "/(.*)", "dest": "/public/$1" }
+  ]
+}

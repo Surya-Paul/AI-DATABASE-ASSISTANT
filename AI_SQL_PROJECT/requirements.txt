@@ -1,0 +1,9 @@
+fastapi
+groq
+sqlalchemy
+python-dotenv
+pydantic
+python-multipart
+pandas
+openpyxl
+xlrd
