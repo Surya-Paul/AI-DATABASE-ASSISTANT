@@ -21,12 +21,8 @@ def generate_sql(question: str, schema: str) -> str:
         else:
             return "SELECT * FROM Employee LIMIT 10;"
 
-    prompt = f"""You are an expert SQL assistant. Your task is to write a SQL query that answers the user's question based on the provided database schema.
-The database is SQLite. Do not include markdown formatting like ```sql in your response, return ONLY the raw SQL query.
-Use standard SQL. Only query the tables and columns provided in the schema.
-CRITICAL: You MUST wrap all table names and column names in double quotes (e.g., "Order_ID"). Do NOT use brackets (e.g. [Order ID]) for quoting under any circumstances. If the user refers to a column with spaces, map it to the actual column name in the schema which may have underscores instead.
-
-Schema:
+    system_prompt = "You are an expert SQL assistant. The database is SQLite. Return ONLY the raw SQL query, no markdown. CRITICAL: You MUST wrap ALL table names and column names in double quotes (e.g., \"Order_ID\", \"Row_ID\"). Do NOT use brackets for quoting."
+    prompt = f"""Schema:
 {schema}
 
 User Question: {question}
@@ -35,8 +31,12 @@ Raw SQL Query:"""
     
     response = client.chat.completions.create(
         model=MODEL,
+        temperature=0.0,
         max_tokens=500,
-        messages=[{"role": "user", "content": prompt}]
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}
+        ]
     )
     # Just in case the model adds markdown formatting, strip it
     sql = response.choices[0].message.content.strip()
@@ -52,9 +52,8 @@ def explain_sql(sql: str, schema: str) -> str:
     if not api_key or api_key == "your_api_key_here":
         return "*(Mock Explanation)*: This query selects data from the Employee table. It may filter or sort the results based on the clauses provided."
 
-    prompt = f"""You are an expert SQL assistant. Explain the following SQL query clause by clause in simple, non-technical plain English so a business user can understand it.
-
-Schema:
+    system_prompt = "You are an expert SQL assistant. Explain SQL queries in simple, non-technical plain English."
+    prompt = f"""Schema:
 {schema}
 
 SQL Query:
@@ -64,8 +63,12 @@ Explanation:"""
     
     response = client.chat.completions.create(
         model=MODEL,
+        temperature=0.2,
         max_tokens=800,
-        messages=[{"role": "user", "content": prompt}]
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}
+        ]
     )
     return response.choices[0].message.content.strip()
 
@@ -73,7 +76,8 @@ def optimize_sql(sql: str, schema: str, query_plan: str) -> str:
     if not api_key or api_key == "your_api_key_here":
         return "*(Mock Optimization)*: Consider adding an index to the columns used in the WHERE or ORDER BY clauses. Ensure you are only SELECTing the columns you need."
 
-    prompt = f"""You are an expert SQL performance tuner. Given the SQL query, database schema, and the EXPLAIN QUERY PLAN output, provide concrete suggestions for optimizing the query. Point out missing indexes, unnecessary subqueries, or suboptimal functions.
+    system_prompt = "You are an expert SQL performance tuner."
+    prompt = f"""Given the SQL query, database schema, and the EXPLAIN QUERY PLAN output, provide concrete suggestions for optimizing the query. Point out missing indexes, unnecessary subqueries, or suboptimal functions.
 
 Schema:
 {schema}
@@ -88,8 +92,12 @@ Optimization Suggestions:"""
 
     response = client.chat.completions.create(
         model=MODEL,
+        temperature=0.2,
         max_tokens=800,
-        messages=[{"role": "user", "content": prompt}]
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}
+        ]
     )
     return response.choices[0].message.content.strip()
 
@@ -98,9 +106,9 @@ def correct_sql(question: str, sql: str, error: str, schema: str) -> str:
         # Just return a very basic query to fix the failure
         return "SELECT * FROM Employee LIMIT 5;"
 
-    prompt = f"""You are an expert SQL assistant. The user tried to answer a question with a SQL query, but it failed with an error. 
-Please provide a corrected SQL query. The database is SQLite. Return ONLY the raw SQL query without markdown blocks.
-CRITICAL: You MUST wrap all table names and column names in double quotes (e.g., "Order_ID"). Do NOT use brackets (e.g. [Order ID]) for quoting under any circumstances. If the user refers to a column with spaces, map it to the actual column name in the schema which may have underscores instead.
+    system_prompt = "You are an expert SQL assistant. The database is SQLite. Return ONLY the corrected raw SQL query without markdown blocks. CRITICAL: You MUST wrap ALL table names and column names in double quotes (e.g., \"Order_ID\", \"Row_ID\"). Do NOT use brackets for quoting."
+    prompt = f"""The user tried to answer a question with a SQL query, but it failed with an error. 
+Please provide a corrected SQL query.
 
 Schema:
 {schema}
@@ -117,8 +125,12 @@ Corrected Raw SQL Query:"""
 
     response = client.chat.completions.create(
         model=MODEL,
+        temperature=0.0,
         max_tokens=500,
-        messages=[{"role": "user", "content": prompt}]
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}
+        ]
     )
     corrected_sql = response.choices[0].message.content.strip()
     if corrected_sql.startswith("```sql"):
@@ -128,3 +140,45 @@ Corrected Raw SQL Query:"""
     if corrected_sql.endswith("```"):
         corrected_sql = corrected_sql[:-3]
     return corrected_sql.strip()
+
+def generate_chart_config(question: str, sql: str, columns: list, rows: list) -> dict:
+    if not api_key or api_key == "your_api_key_here":
+        # Mock response for when there is no API key
+        if len(columns) >= 2:
+            return {"type": "bar", "xAxis": columns[0], "yAxis": columns[1]}
+        return {"type": "bar", "xAxis": "", "yAxis": ""}
+
+    system_prompt = "You are a data visualization expert. Return ONLY a valid JSON object."
+    sample_data = str(rows[:3]) if rows else "[]"
+    prompt = f"""The user asked a question, a SQL query was executed, and data was returned.
+Please suggest the best way to visualize this data using a chart. 
+The JSON must have the following keys:
+- "type": The type of chart ("bar", "line", or "pie")
+- "xAxis": The column name to use for the X-axis (the label/category).
+- "yAxis": The column name to use for the Y-axis (the numerical value).
+
+User Question: {question}
+SQL Query: {sql}
+Columns: {columns}
+Sample Data: {sample_data}"""
+
+    response = client.chat.completions.create(
+        model=MODEL,
+        temperature=0.0,
+        max_tokens=200,
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}
+        ]
+    )
+    import json
+    result_text = response.choices[0].message.content.strip()
+    
+    try:
+        return json.loads(result_text.strip())
+    except Exception:
+        # Fallback if the LLM messes up
+        if len(columns) >= 2:
+            return {"type": "bar", "xAxis": columns[0], "yAxis": columns[1]}
+        return {"type": "bar", "xAxis": "", "yAxis": ""}

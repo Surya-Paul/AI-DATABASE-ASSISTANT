@@ -4,6 +4,12 @@ echo Starting AI SQL Assistant
 echo ===================================================
 echo.
 
+:: Clear old random data
+if exist "backend\data.db" (
+    echo Deleting old database...
+    del "backend\data.db"
+)
+
 :: Start Backend in a new window
 echo Starting Backend (FastAPI)...
 start cmd /k "cd backend && python -m uvicorn main:app --reload"

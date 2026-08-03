@@ -186,16 +186,22 @@ def generate_sql(question: str, schema: str) -> str:
             return "SELECT AVG(Salary) as average_salary FROM Employee;"
         else:
             return "SELECT * FROM Employee LIMIT 10;"
-    prompt = f"""You are an expert SQL assistant. Write a SQL query for the user's question.
-The database is SQLite. Return ONLY the raw SQL query, no markdown.
-
-Schema:
+    system_prompt = "You are an expert SQL assistant. The database is SQLite. Return ONLY the raw SQL query, no markdown. CRITICAL: You MUST wrap ALL table names and column names in double quotes (e.g., \"Order_ID\", \"Row_ID\"). Do NOT use brackets for quoting."
+    prompt = f"""Schema:
 {schema}
 
 User Question: {question}
 
 Raw SQL Query:"""
-    response = client.chat.completions.create(model=MODEL, max_tokens=500, messages=[{"role": "user", "content": prompt}])
+    response = client.chat.completions.create(
+        model=MODEL, 
+        temperature=0.0,
+        max_tokens=500, 
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}
+        ]
+    )
     sql = response.choices[0].message.content.strip()
     for prefix in ["```sql", "```"]:
         if sql.startswith(prefix):
@@ -208,42 +214,68 @@ Raw SQL Query:"""
 def explain_sql(sql: str, schema: str) -> str:
     if not api_key or api_key == "your_api_key_here":
         return "*(Mock Explanation)*: This query selects data from the Employee table. It may filter or sort the results based on the clauses provided."
-    prompt = f"""Explain the following SQL query clause by clause in simple plain English.
-Schema:
+    system_prompt = "You are an expert SQL assistant. Explain SQL queries in simple plain English."
+    prompt = f"""Schema:
 {schema}
 
 SQL Query:
 {sql}
 
 Explanation:"""
-    response = client.chat.completions.create(model=MODEL, max_tokens=800, messages=[{"role": "user", "content": prompt}])
+    response = client.chat.completions.create(
+        model=MODEL, 
+        temperature=0.2,
+        max_tokens=800, 
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}
+        ]
+    )
     return response.choices[0].message.content.strip()
 
 
 def optimize_sql(sql: str, schema: str, query_plan: str) -> str:
     if not api_key or api_key == "your_api_key_here":
         return "*(Mock Optimization)*: Consider adding an index to columns used in WHERE or ORDER BY. Only SELECT the columns you need."
+    system_prompt = "You are an expert SQL performance tuner."
     prompt = f"""Suggest optimizations for this SQL query.
 Schema: {schema}
 SQL: {sql}
 Query Plan: {query_plan}
 
 Suggestions:"""
-    response = client.chat.completions.create(model=MODEL, max_tokens=800, messages=[{"role": "user", "content": prompt}])
+    response = client.chat.completions.create(
+        model=MODEL, 
+        temperature=0.2,
+        max_tokens=800, 
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}
+        ]
+    )
     return response.choices[0].message.content.strip()
 
 
 def correct_sql(question: str, sql: str, error: str, schema: str) -> str:
     if not api_key or api_key == "your_api_key_here":
         return "SELECT * FROM Employee LIMIT 5;"
-    prompt = f"""Fix this SQL query. Return ONLY the corrected raw SQL.
+    system_prompt = "You are an expert SQL assistant. Return ONLY the corrected raw SQL. CRITICAL: You MUST wrap ALL table names and column names in double quotes (e.g., \"Order_ID\", \"Row_ID\"). Do NOT use brackets for quoting."
+    prompt = f"""Fix this SQL query.
 Schema: {schema}
 Question: {question}
 Failed SQL: {sql}
 Error: {error}
 
 Corrected SQL:"""
-    response = client.chat.completions.create(model=MODEL, max_tokens=500, messages=[{"role": "user", "content": prompt}])
+    response = client.chat.completions.create(
+        model=MODEL, 
+        temperature=0.0,
+        max_tokens=500, 
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}
+        ]
+    )
     corrected = response.choices[0].message.content.strip()
     for prefix in ["```sql", "```"]:
         if corrected.startswith(prefix):
@@ -251,6 +283,48 @@ Corrected SQL:"""
     if corrected.endswith("```"):
         corrected = corrected[:-3]
     return corrected.strip()
+
+
+def generate_chart_config(question: str, sql: str, columns: list, rows: list) -> dict:
+    if not api_key or api_key == "your_api_key_here":
+        if len(columns) >= 2:
+            return {"type": "bar", "xAxis": columns[0], "yAxis": columns[1]}
+        return {"type": "bar", "xAxis": "", "yAxis": ""}
+
+    system_prompt = "You are a data visualization expert. Return ONLY a valid JSON object."
+    sample_data = str(rows[:3]) if rows else "[]"
+    prompt = f"""The user asked a question, a SQL query was executed, and data was returned.
+Please suggest the best way to visualize this data using a chart. 
+The JSON must have the following keys:
+- "type": The type of chart ("bar", "line", or "pie")
+- "xAxis": The column name to use for the X-axis (the label/category).
+- "yAxis": The column name to use for the Y-axis (the numerical value).
+
+User Question: {question}
+SQL Query: {sql}
+Columns: {columns}
+Sample Data: {sample_data}"""
+
+    response = client.chat.completions.create(
+        model=MODEL, 
+        temperature=0.0,
+        max_tokens=200, 
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}
+        ]
+    )
+    import json
+    result_text = response.choices[0].message.content.strip()
+    
+    try:
+        return json.loads(result_text.strip())
+    except Exception:
+        if len(columns) >= 2:
+            return {"type": "bar", "xAxis": columns[0], "yAxis": columns[1]}
+        return {"type": "bar", "xAxis": "", "yAxis": ""}
+
 
 
 # ──────────────────────────────────────────────
@@ -281,6 +355,13 @@ class CorrectRequest(BaseModel):
     question: str
     sql: str
     error: str
+
+
+class ChartRequest(BaseModel):
+    question: str
+    sql: str
+    columns: list
+    rows: list
 
 
 @app.get("/")
@@ -333,6 +414,15 @@ def correct(req: CorrectRequest):
     schema = get_schema_info()
     try:
         return {"sql": correct_sql(req.question, req.sql, req.error, schema)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/chart")
+def get_chart_config(req: ChartRequest):
+    try:
+        config = generate_chart_config(req.question, req.sql, req.columns, req.rows)
+        return {"chart_config": config}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

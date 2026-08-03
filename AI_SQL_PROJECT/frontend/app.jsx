@@ -11,6 +11,10 @@ function App() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [confirmModal, setConfirmModal] = useState(null);
+  const [isFileUploaded, setIsFileUploaded] = useState(false);
+  const [uploadMessage, setUploadMessage] = useState('');
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
   const endOfMessagesRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -79,14 +83,112 @@ function App() {
     setConfirmModal(null);
   };
 
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      processFile(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleFileSelect = (e) => {
+    if (e.target.files && e.target.files.length > 0) {
+      processFile(e.target.files[0]);
+    }
+  };
+
+  const processFile = async (file) => {
+    setSelectedFile(file);
+    const formData = new FormData();
+    formData.append('file', file);
+
+    setLoading(true);
+    setUploadMessage('Uploading and processing file...');
+    
+    try {
+      const res = await fetch(`${API_BASE}/upload`, {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json();
+      
+      if (!res.ok) {
+        throw new Error(data.detail || data.error || 'Upload failed');
+      }
+      
+      setIsFileUploaded(true);
+      setUploadMessage('');
+      setMessages([{ type: 'assistant', text: `Success! ${data.message}. You can now start asking questions.` }]);
+    } catch (error) {
+       setUploadMessage(`Error: ${error.message}`);
+       setSelectedFile(null); // Reset on error so they can try again
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRemoveFile = () => {
+    setIsFileUploaded(false);
+    setSelectedFile(null);
+    setMessages([]);
+    setUploadMessage('');
+  };
+
   return (
     <div className="app-container">
-      <header>
-        <h1>AI SQL Assistant</h1>
-        <p className="info-text">Chat with your database in plain English</p>
+      <header className="page-header">
+        <h1 className="animate-title">AI SQL Assistant</h1>
+        <p className="info-text animate-tagline">Chat with your database in plain English</p>
       </header>
 
-      <div className="glass-panel chat-history">
+      {!selectedFile ? (
+        <div 
+          className={`glass-panel upload-area animate-upload ${isDragging ? 'dragging' : ''}`} 
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          <h2>Upload Data to Begin</h2>
+          <p>Drag & drop or select an Excel/CSV file to fetch data from.</p>
+          <input 
+            type="file" 
+            accept=".csv, .xlsx, .xls" 
+            onChange={handleFileSelect} 
+            disabled={loading}
+            id="file-upload"
+            className="hidden-input"
+          />
+          <label htmlFor="file-upload" className={`button primary custom-file-label ${loading ? 'disabled' : ''}`}>
+            Choose File
+          </label>
+          {uploadMessage && <p className="info-text">{uploadMessage}</p>}
+        </div>
+      ) : (
+        <div className="main-workspace animate-workspace">
+          <div className="glass-panel file-preview-card">
+            <div className="file-info">
+              <span className="file-icon">📄</span>
+              <span className="file-name">{selectedFile.name}</span>
+              {loading && !isFileUploaded && <span className="upload-status">(Uploading...)</span>}
+            </div>
+            <button className="remove-file-btn" onClick={handleRemoveFile} title="Remove File" disabled={loading}>
+              ✕
+            </button>
+          </div>
+          
+          {isFileUploaded && (
+            <div className="chat-workspace animate-chat">
+              <div className="glass-panel chat-history">
         {messages.map((msg, idx) => (
           <div key={idx} className="message-card">
             {msg.type === 'user' ? (
@@ -124,23 +226,27 @@ function App() {
         <div ref={endOfMessagesRef} />
       </div>
 
-      <div className="glass-panel input-area">
-        <input 
-          type="text" 
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleQuery(input)}
-          placeholder="e.g. Show the five highest-paid employees..."
-          disabled={loading || confirmModal !== null}
-        />
-        <button 
-          className="primary" 
-          onClick={() => handleQuery(input)}
-          disabled={loading || !input.trim() || confirmModal !== null}
-        >
-          Run
-        </button>
-      </div>
+              <div className="glass-panel input-area">
+                <input 
+                  type="text" 
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleQuery(input)}
+                  placeholder="e.g. Show the five highest-paid employees..."
+                  disabled={loading || confirmModal !== null}
+                />
+                <button 
+                  className={`primary analyze-btn ${!input.trim() || loading || confirmModal !== null ? 'disabled' : 'ready'}`}
+                  onClick={() => handleQuery(input)}
+                  disabled={loading || !input.trim() || confirmModal !== null}
+                >
+                  {loading && !uploadMessage ? <span className="spinner"></span> : 'Run'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {confirmModal && (
         <div className="modal-overlay">

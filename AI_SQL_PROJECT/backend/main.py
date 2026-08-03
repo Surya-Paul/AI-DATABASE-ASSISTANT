@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 
 from db import get_schema_info, execute_query, is_destructive, load_dataframe_to_db
-from llm import generate_sql, explain_sql, optimize_sql, correct_sql
+from llm import generate_sql, explain_sql, optimize_sql, correct_sql, generate_chart_config
 
 app = FastAPI(title="AI SQL Assistant")
 
@@ -119,6 +119,20 @@ def correct_query(req: CorrectRequest):
         # Execute corrected query (without confirmation for now, as it's typically SELECT)
         # However, to be safe, we just return the new SQL and let the frontend send it back to /query
         return {"sql": corrected}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class ChartRequest(BaseModel):
+    question: str
+    sql: str
+    columns: list
+    rows: list
+
+@app.post("/chart")
+def get_chart_config(req: ChartRequest):
+    try:
+        config = generate_chart_config(req.question, req.sql, req.columns, req.rows)
+        return {"chart_config": config}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

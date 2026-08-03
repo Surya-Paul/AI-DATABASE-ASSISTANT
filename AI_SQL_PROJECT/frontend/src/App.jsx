@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 const API_BASE = 'http://localhost:8000';
 
@@ -43,6 +44,7 @@ function App() {
           type: 'assistant', 
           sql: data.sql,
           result: data,
+          question: question,
           id: Date.now()
         }]);
       }
@@ -180,13 +182,28 @@ function AssistantMessage({ msg, onCorrect }) {
 
     setLoadingTab(true);
     try {
-      const res = await fetch(`${API_BASE}/${action}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sql: msg.sql })
-      });
-      const data = await res.json();
-      setTabData(prev => ({ ...prev, [action]: data.explanation || data.optimization || 'No data returned.' }));
+      if (action === 'chart') {
+        const res = await fetch(`${API_BASE}/chart`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            question: msg.question || "", 
+            sql: msg.sql,
+            columns: msg.result?.columns || [],
+            rows: msg.result?.rows || []
+          })
+        });
+        const data = await res.json();
+        setTabData(prev => ({ ...prev, [action]: data.chart_config }));
+      } else {
+        const res = await fetch(`${API_BASE}/${action}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sql: msg.sql })
+        });
+        const data = await res.json();
+        setTabData(prev => ({ ...prev, [action]: data.explanation || data.optimization || 'No data returned.' }));
+      }
     } catch (e) {
       setTabData(prev => ({ ...prev, [action]: `Error: ${e.message}` }));
     } finally {
@@ -247,6 +264,14 @@ function AssistantMessage({ msg, onCorrect }) {
           >
             Optimize
           </button>
+          {msg.result.rows && msg.result.rows.length > 0 && (
+            <button 
+              className={activeTab === 'chart' ? 'active' : ''} 
+              onClick={() => handleAction('chart')}
+            >
+              Chart
+            </button>
+          )}
         </div>
       )}
 
@@ -254,14 +279,84 @@ function AssistantMessage({ msg, onCorrect }) {
         <div className="tabs">
           <div className="tabs-header">
             <span className="tab-btn active">
-              {activeTab === 'explain' ? 'Explanation' : 'Optimization Suggestions'}
+              {activeTab === 'explain' ? 'Explanation' : activeTab === 'optimize' ? 'Optimization Suggestions' : 'Chart Visualization'}
             </span>
           </div>
           <div className="tab-content">
-            {loadingTab ? 'Loading...' : tabData[activeTab]}
+            {loadingTab ? 'Loading...' : (
+              activeTab === 'chart' 
+                ? <ChartRenderer config={tabData.chart} data={msg.result.rows} />
+                : tabData[activeTab]
+            )}
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
+
+function ChartRenderer({ config, data }) {
+  if (!config) return <div>No chart configuration available.</div>;
+  if (!data || data.length === 0) return <div>No data to chart.</div>;
+
+  const { type, xAxis, yAxis } = config;
+
+  if (!xAxis || !yAxis) {
+    return <div>Could not determine axes for the chart. Make sure the data contains multiple columns.</div>;
+  }
+
+  const formattedData = data.map(row => ({
+    ...row,
+    [yAxis]: Number(row[yAxis]) || 0
+  }));
+
+  const renderChartType = () => {
+    switch (type) {
+      case 'pie':
+        return (
+          <PieChart>
+            <Tooltip />
+            <Legend />
+            <Pie data={formattedData} dataKey={yAxis} nameKey={xAxis} cx="50%" cy="50%" outerRadius={100} fill="#8884d8" label>
+              {formattedData.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+              ))}
+            </Pie>
+          </PieChart>
+        );
+      case 'line':
+        return (
+          <LineChart data={formattedData}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey={xAxis} />
+            <YAxis />
+            <Tooltip />
+            <Legend />
+            <Line type="monotone" dataKey={yAxis} stroke="#8884d8" />
+          </LineChart>
+        );
+      case 'bar':
+      default:
+        return (
+          <BarChart data={formattedData}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey={xAxis} />
+            <YAxis />
+            <Tooltip />
+            <Legend />
+            <Bar dataKey={yAxis} fill="#8884d8" />
+          </BarChart>
+        );
+    }
+  };
+
+  return (
+    <div style={{ width: '100%', height: 300, marginTop: '20px' }}>
+      <ResponsiveContainer width="100%" height="100%">
+        {renderChartType()}
+      </ResponsiveContainer>
     </div>
   );
 }

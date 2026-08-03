@@ -4,3 +4,6 @@ groq
 sqlalchemy
 python-dotenv
 pydantic
+pandas
+openpyxl
+python-multipart

@@ -83,6 +83,7 @@ function App() {
           type: 'assistant', 
           sql: data.sql,
           result: data,
+          question: question,
           id: Date.now()
         }]);
       }
@@ -232,13 +233,28 @@ function AssistantMessage({ msg, onCorrect }) {
 
     setLoadingTab(true);
     try {
-      const res = await fetch(`${API_BASE}/${action}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sql: msg.sql })
-      });
-      const data = await res.json();
-      setTabData(prev => ({ ...prev, [action]: data.explanation || data.optimization || 'No data returned.' }));
+      if (action === 'chart') {
+        const res = await fetch(`${API_BASE}/chart`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            question: msg.question || "", 
+            sql: msg.sql,
+            columns: msg.result?.columns || [],
+            rows: msg.result?.rows || []
+          })
+        });
+        const data = await res.json();
+        setTabData(prev => ({ ...prev, [action]: data.chart_config }));
+      } else {
+        const res = await fetch(`${API_BASE}/${action}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sql: msg.sql })
+        });
+        const data = await res.json();
+        setTabData(prev => ({ ...prev, [action]: data.explanation || data.optimization || 'No data returned.' }));
+      }
     } catch (e) {
       setTabData(prev => ({ ...prev, [action]: `Error: ${e.message}` }));
     } finally {
@@ -303,6 +319,14 @@ function AssistantMessage({ msg, onCorrect }) {
           >
             Optimize
           </button>
+          {msg.result.rows && msg.result.rows.length > 0 && (
+            <button 
+              className={activeTab === 'chart' ? 'active' : ''} 
+              onClick={() => handleAction('chart')}
+            >
+              Chart
+            </button>
+          )}
         </div>
       )}
 
@@ -310,14 +334,122 @@ function AssistantMessage({ msg, onCorrect }) {
         <div className="tabs">
           <div className="tabs-header">
             <span className="tab-btn active">
-              {activeTab === 'explain' ? 'Explanation' : 'Optimization Suggestions'}
+              {activeTab === 'explain' ? 'Explanation' : activeTab === 'optimize' ? 'Optimization Suggestions' : 'Chart Visualization'}
             </span>
           </div>
           <div className="tab-content">
-            {loadingTab ? 'Loading...' : tabData[activeTab]}
+            {loadingTab ? 'Loading...' : (
+              activeTab === 'chart' 
+                ? <ChartRenderer config={tabData.chart} data={msg.result.rows} />
+                : tabData[activeTab]
+            )}
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+const CHART_COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658', '#ff7300'];
+
+function ChartRenderer({ config, data }) {
+  const canvasRef = useRef(null);
+  const chartInstanceRef = useRef(null);
+
+  useEffect(() => {
+    // Destroy previous chart if it exists
+    if (chartInstanceRef.current) {
+      chartInstanceRef.current.destroy();
+      chartInstanceRef.current = null;
+    }
+
+    if (!config || !data || data.length === 0 || !config.xAxis || !config.yAxis) return;
+
+    const ctx = canvasRef.current.getContext('2d');
+    const labels = data.map(row => String(row[config.xAxis] ?? ''));
+    const values = data.map(row => Number(row[config.yAxis]) || 0);
+
+    let chartConfig;
+
+    if (config.type === 'pie') {
+      chartConfig = {
+        type: 'pie',
+        data: {
+          labels,
+          datasets: [{
+            data: values,
+            backgroundColor: CHART_COLORS.slice(0, labels.length),
+            borderWidth: 1,
+            borderColor: 'rgba(255,255,255,0.2)'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'right', labels: { color: '#e0e0e0', font: { size: 12 } } },
+            tooltip: { enabled: true }
+          }
+        }
+      };
+    } else {
+      chartConfig = {
+        type: config.type === 'line' ? 'line' : 'bar',
+        data: {
+          labels,
+          datasets: [{
+            label: config.yAxis,
+            data: values,
+            backgroundColor: config.type === 'line' 
+              ? 'rgba(136, 132, 216, 0.2)' 
+              : CHART_COLORS.slice(0, labels.length),
+            borderColor: config.type === 'line' ? '#8884d8' : 'rgba(255,255,255,0.1)',
+            borderWidth: config.type === 'line' ? 2 : 1,
+            tension: 0.3,
+            fill: config.type === 'line',
+            pointBackgroundColor: '#8884d8',
+            pointRadius: 4
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: { 
+              ticks: { color: '#b0b0b0', maxRotation: 45 }, 
+              grid: { color: 'rgba(255,255,255,0.05)' } 
+            },
+            y: { 
+              ticks: { color: '#b0b0b0' }, 
+              grid: { color: 'rgba(255,255,255,0.08)' },
+              beginAtZero: true 
+            }
+          },
+          plugins: {
+            legend: { labels: { color: '#e0e0e0' } },
+            tooltip: { enabled: true }
+          }
+        }
+      };
+    }
+
+    chartInstanceRef.current = new Chart(ctx, chartConfig);
+
+    return () => {
+      if (chartInstanceRef.current) {
+        chartInstanceRef.current.destroy();
+        chartInstanceRef.current = null;
+      }
+    };
+  }, [config, data]);
+
+  if (!config) return <div>No chart configuration available.</div>;
+  if (!data || data.length === 0) return <div>No data to chart.</div>;
+  if (!config.xAxis || !config.yAxis) return <div>Could not determine axes for the chart.</div>;
+
+  return (
+    <div style={{ width: '100%', height: '320px', marginTop: '12px' }}>
+      <canvas ref={canvasRef}></canvas>
     </div>
   );
 }
